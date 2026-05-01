@@ -4,6 +4,7 @@
 
 本仓库是 **WorkBrief AI** 的轻量级本地工具，用于根据 Git diff 生成中文研发周报。
 
+- `workbrief.py` 是 CLI 版本，推荐使用。共享 `server.py` 中的核心逻辑（`run_git`、`build_diff_args`、`build_weekly_prompt`、`call_deepseek`、`get_deepseek_api_key`）。
 - `index.html` 包含完整应用：HTML 结构、内联 CSS 和内联 JavaScript。
 - `server.py` 提供本地静态服务、`/api/git-versions` 和 `/api/git-diff` 接口，用于查询版本并读取启动目录中的 Git diff。
 - `README.md` 说明产品功能和浏览器使用方式。
@@ -11,10 +12,20 @@
 
 保持改动聚焦。若应用继续增长，可将可复用 JavaScript 拆到 `src/`，将静态资源放到 `assets/`，但不要在没有明确需求时引入框架。
 
+⚠️ `workbrief.py` 和 `server.py` 中的 `run_git`、`build_diff_args`、`build_weekly_prompt`、`call_deepseek`、`get_deepseek_api_key` 是重复的核心逻辑。修改其中一处时，必须同步另一处。
+
 ## 构建、测试与本地开发命令
 
 本项目不需要安装依赖或构建步骤。
 
+CLI:
+- 生成周报：`python3 workbrief.py`
+- 暂存区：`python3 workbrief.py -s`
+- 范围 diff：`python3 workbrief.py -b main`
+- 仅输出 diff：`python3 workbrief.py -d`
+- 输出到文件：`python3 workbrief.py -o weekly.md`
+
+浏览器 UI:
 - 本地打开：`open index.html`
 - 启动带 Git diff 接口的本地服务：`python3 server.py`
 - 访问地址：`http://localhost:8000`

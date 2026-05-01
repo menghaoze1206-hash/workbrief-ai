@@ -6,7 +6,7 @@
 
 - 支持查询 Git 分支和最近提交，并选择从哪个版本开始生成 diff
 - 支持读取工作区、暂存区或所选版本到 `HEAD` 的 Git diff
-- 根据代码变更生成中文研发周报
+- 根据代码变更生成简洁中文研发周报
 - 固定调用 DeepSeek `deepseek-v4-flash` 生成周报
 - DeepSeek 调用失败时使用本地模板生成 diff 摘要
 - 支持 Markdown 原文和渲染预览两种结果视图
