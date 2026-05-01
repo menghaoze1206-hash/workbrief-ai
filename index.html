@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WorkBrief AI - Diff 周报生成器</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f1f5f9;
+        --bg-soft: #f8fafc;
+        --panel: #ffffff;
+        --text: #0f172a;
+        --text-soft: #334155;
+        --muted: #64748b;
+        --line: #e2e8f0;
+        --accent: #6366f1;
+        --accent-strong: #4f46e5;
+        --accent-light: #eef2ff;
+        --accent-glow: rgba(99, 102, 241, 0.15);
+        --success: #10b981;
+        --success-light: #ecfdf5;
+        --warn: #f59e0b;
+        --radius-sm: 8px;
+        --radius: 12px;
+        --radius-lg: 16px;
+        --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+        --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+        --shadow-lg: 0 4px 6px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.06);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button, input, select, textarea { font: inherit; }
+
+      /* ── Header ── */
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 16px 32px;
+        background: rgba(255,255,255,0.82);
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+
+      .brand { display: flex; align-items: center; gap: 14px; }
+
+      .mark {
+        width: 40px; height: 40px;
+        border-radius: var(--radius-sm);
+        display: grid; place-items: center;
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        color: #fff; font-weight: 800; font-size: 18px;
+        box-shadow: 0 4px 12px var(--accent-glow);
+      }
+
+      h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+
+      .brand-sub { color: var(--muted); font-size: 12px; }
+
+      /* ── Main layout ── */
+      main {
+        width: min(1440px, 100%);
+        margin: 0 auto;
+        padding: 28px 32px;
+        display: grid;
+        grid-template-columns: minmax(380px, 500px) minmax(0, 1fr);
+        gap: 24px;
+        align-items: start;
+      }
+
+      /* ── Panel ── */
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .controls { padding: 24px; align-self: start; }
+
+      .output {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        min-height: calc(100vh - 140px);
+      }
+
+      /* ── Section headers ── */
+      .section-title {
+        margin: 0 0 20px;
+        font-size: 15px; font-weight: 700;
+        letter-spacing: -0.01em;
+        display: flex; align-items: center; gap: 8px;
+      }
+
+      .section-icon {
+        width: 28px; height: 28px;
+        border-radius: 7px;
+        display: inline-flex; align-items: center; justify-content: center;
+      }
+      .section-icon.code  { background: var(--accent-light); color: var(--accent); }
+      .section-icon.report { background: var(--success-light); color: var(--success); }
+      .section-icon svg { width: 15px; height: 15px; }
+
+      /* ── Fields ── */
+      .field { display: grid; gap: 6px; margin-bottom: 18px; }
+
+      .field label {
+        color: var(--text-soft); font-size: 13px; font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .diff-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto;
+        gap: 10px; align-items: end;
+      }
+
+      /* ── Form elements ── */
+      input, select, textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        background: var(--bg-soft);
+        color: var(--text);
+        outline: none;
+        transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
+      }
+
+      input, select { height: 42px; padding: 0 12px; }
+
+      select {
+        cursor: pointer; appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        padding-right: 36px;
+      }
+
+      textarea {
+        min-height: 300px; resize: vertical;
+        padding: 12px 14px; line-height: 1.6;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+      }
+
+      input:hover, select:hover, textarea:hover { border-color: #cbd5e1; }
+
+      input:focus, select:focus, textarea:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-glow);
+        background: #fff;
+      }
+
+      /* ── Buttons ── */
+      .btn {
+        display: inline-flex; align-items: center; justify-content: center;
+        gap: 6px; min-height: 40px; padding: 0 16px;
+        border: 1px solid var(--line); border-radius: var(--radius-sm);
+        background: #fff; color: var(--text-soft);
+        cursor: pointer; font-weight: 600; font-size: 13px;
+        white-space: nowrap; user-select: none;
+        transition: all .2s ease;
+      }
+
+      .btn:hover {
+        border-color: #cbd5e1; background: #f8fafc; color: var(--text);
+      }
+
+      .btn:active { transform: scale(0.985); }
+
+      .btn.primary {
+        border-color: transparent;
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        color: #fff; font-weight: 650; font-size: 14px;
+        box-shadow: 0 2px 8px var(--accent-glow);
+      }
+
+      .btn.primary:hover {
+        background: linear-gradient(135deg, var(--accent-strong), #4338ca);
+        box-shadow: 0 4px 16px rgba(99,102,241,0.28);
+        transform: translateY(-1px);
+      }
+
+      .btn.primary:active { transform: translateY(0) scale(0.985); }
+
+      .btn.full { width: 100%; }
+
+      .btn.ghost {
+        border-color: transparent; background: transparent; color: var(--muted);
+      }
+      .btn.ghost:hover { background: var(--bg-soft); color: var(--text); }
+
+      .btn-sm { min-height: 34px; padding: 0 12px; font-size: 12px; }
+
+      /* ── Status dot ── */
+      .status {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 12px; color: var(--muted);
+      }
+
+      .status::before {
+        content: ""; width: 7px; height: 7px;
+        border-radius: 50%; background: var(--muted); flex-shrink: 0;
+      }
+
+      .status.warn { color: var(--warn); }
+      .status.warn::before { background: var(--warn); }
+      .status.ok { color: var(--success); }
+      .status.ok::before { background: var(--success); }
+
+      /* ── Output area ── */
+      .output-head, .output-actions {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 16px 24px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .output-tools {
+        display: flex; align-items: center; gap: 10px;
+      }
+
+      .view-tabs {
+        display: inline-flex; gap: 4px; padding: 4px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        background: var(--bg-soft);
+      }
+
+      .tab-btn {
+        min-height: 28px; padding: 0 10px;
+        border: 0; border-radius: 6px;
+        background: transparent; color: var(--muted);
+        cursor: pointer; font-size: 12px; font-weight: 650;
+      }
+
+      .tab-btn.active {
+        background: #fff; color: var(--text);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .output-actions {
+        justify-content: flex-end;
+        border-top: 1px solid var(--line); border-bottom: 0;
+        background: var(--bg-soft);
+      }
+
+      .report {
+        margin: 0; padding: 28px 28px 48px;
+        overflow: auto; white-space: pre-wrap;
+        line-height: 1.78; font-size: 14px; color: var(--text-soft);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+
+      .report.empty {
+        display: flex; align-items: center; justify-content: center;
+        text-align: center; color: var(--muted);
+        font-size: 14px; font-style: italic;
+        min-height: 200px;
+      }
+
+      .preview {
+        padding: 28px 32px 48px;
+        overflow: auto;
+        line-height: 1.78;
+        color: var(--text-soft);
+        font-size: 15px;
+      }
+
+      .preview h1,
+      .preview h2,
+      .preview h3 {
+        margin: 0 0 12px;
+        color: var(--text);
+        line-height: 1.35;
+        letter-spacing: -0.01em;
+      }
+
+      .preview h1 {
+        font-size: 24px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .preview h2 {
+        margin-top: 26px;
+        font-size: 19px;
+      }
+
+      .preview h3 {
+        margin-top: 20px;
+        font-size: 16px;
+      }
+
+      .preview p { margin: 0 0 12px; }
+      .preview ul,
+      .preview ol { margin: 0 0 14px; padding-left: 24px; }
+      .preview li { margin: 4px 0; }
+      .preview strong { color: var(--text); font-weight: 750; }
+
+      .preview code {
+        padding: 2px 5px;
+        border-radius: 5px;
+        background: var(--bg-soft);
+        border: 1px solid var(--line);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 0.9em;
+      }
+
+      .preview pre {
+        margin: 0 0 14px;
+        padding: 14px;
+        overflow: auto;
+        border-radius: var(--radius-sm);
+        background: #0f172a;
+        color: #e2e8f0;
+        line-height: 1.55;
+      }
+
+      .preview pre code {
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+      }
+
+      .hidden { display: none; }
+
+      /* ── Hint ── */
+      .field-hint {
+        margin-top: 6px; color: var(--muted);
+        font-size: 11px; line-height: 1.5;
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 960px) {
+        header { padding: 14px 20px; }
+        main { grid-template-columns: 1fr; padding: 20px; }
+        .output { min-height: 500px; }
+      }
+
+      @media (max-width: 600px) {
+        header { flex-direction: column; align-items: flex-start; gap: 12px; }
+        .diff-row, .output-head, .output-actions {
+          grid-template-columns: 1fr;
+          flex-direction: column; align-items: stretch;
+        }
+        main { padding: 14px; gap: 16px; }
+        .btn { width: 100%; }
+        .controls { padding: 18px; }
+        .report { padding: 20px 18px 36px; font-size: 13px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <div class="mark">W</div>
+        <div>
+          <h1>Diff 周报生成器</h1>
+          <div class="brand-sub">根据 Git diff 智能生成开发周报</div>
+        </div>
+      </div>
+      <button class="btn btn-sm ghost" id="clearBtn" type="button">清空</button>
+    </header>
+
+    <main>
+      <section class="panel controls" aria-label="Diff 设置">
+        <h2 class="section-title">
+          <span class="section-icon code"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></span>
+          代码变更
+        </h2>
+
+        <div class="field">
+          <label>读取范围</label>
+          <div class="diff-row">
+            <div>
+              <label for="diffMode">模式</label>
+              <select id="diffMode">
+                <option value="range">所选版本到 HEAD</option>
+                <option value="working">工作区相对 HEAD</option>
+                <option value="staged">仅暂存区</option>
+              </select>
+            </div>
+            <div>
+              <label for="versionSelect">起始版本</label>
+              <select id="versionSelect">
+                <option value="main">main</option>
+              </select>
+            </div>
+            <button class="btn btn-sm" id="loadVersionsBtn" type="button">刷新版本</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>自定义起点</label>
+          <div class="diff-row" style="margin-bottom:6px">
+            <input id="diffBase" value="main" placeholder="分支名、tag 或 commit SHA" />
+            <button class="btn" id="loadDiffBtn" type="button">读取 Diff</button>
+          </div>
+          <div class="field-hint" id="repoHint">请在目标 Git 仓库目录运行 python3 server.py</div>
+        </div>
+
+        <div class="field">
+          <label for="gitDiff">Git Diff</label>
+          <textarea id="gitDiff" placeholder="点击「读取 Diff」自动获取，或手动粘贴 git diff 输出..."></textarea>
+        </div>
+
+        <button class="btn primary full" id="generateBtn" type="button">
+          <svg style="width:15px;height:15px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> 生成周报
+        </button>
+      </section>
+
+      <section class="panel output" aria-label="生成结果">
+        <div class="output-head">
+          <div>
+            <h2 class="section-title" style="margin-bottom:2px">
+              周报结果
+            </h2>
+            <div class="status" id="status">等待读取代码变更</div>
+          </div>
+          <div class="output-tools">
+            <div class="view-tabs" aria-label="结果视图">
+              <button class="tab-btn active" id="previewTab" type="button">预览</button>
+              <button class="tab-btn" id="markdownTab" type="button">Markdown</button>
+            </div>
+            <button class="btn btn-sm" id="regenerateBtn" type="button">重新生成</button>
+          </div>
+        </div>
+
+        <div class="preview empty" id="preview">读取或粘贴 Git diff 后生成周报。</div>
+        <pre class="report hidden" id="report">读取或粘贴 Git diff 后生成周报。</pre>
+
+        <div class="output-actions">
+          <button class="btn btn-sm" id="copyBtn" type="button">复制</button>
+          <button class="btn btn-sm" id="downloadBtn" type="button">下载 TXT</button>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const reportEl = $("report");
+      const previewEl = $("preview");
+      const statusEl = $("status");
+
+      const fields = [
+        "diffMode", "versionSelect", "diffBase", "gitDiff",
+      ];
+
+      function loadSettings() {
+        const saved = JSON.parse(localStorage.getItem("workbrief-diff-settings") || "{}");
+        fields.forEach((field) => {
+          const el = $(field);
+          if (!el || saved[field] === undefined) return;
+          if (el.type === "checkbox") el.checked = Boolean(saved[field]);
+          else el.value = saved[field];
+        });
+      }
+
+      function saveSettings() {
+        const data = {};
+        fields.forEach((field) => {
+          const el = $(field);
+          data[field] = el.type === "checkbox" ? el.checked : el.value;
+        });
+        localStorage.setItem("workbrief-diff-settings", JSON.stringify(data));
+      }
+
+      function escapeHtml(value) {
+        return value.replace(/[&<>"']/g, (char) => {
+          const entities = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+          return entities[char];
+        });
+      }
+
+      function inlineMarkdown(text) {
+        return escapeHtml(text)
+          .replace(/`([^`]+)`/g, "<code>$1</code>")
+          .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      }
+
+      function renderMarkdown(markdown) {
+        const lines = markdown.split("\n");
+        const html = [];
+        let listType = null;
+        let inCode = false;
+        let codeLines = [];
+
+        const closeList = () => {
+          if (listType) {
+            html.push(`</${listType}>`);
+            listType = null;
+          }
+        };
+
+        lines.forEach((line) => {
+          if (line.startsWith("```")) {
+            if (inCode) {
+              html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+              codeLines = [];
+              inCode = false;
+            } else {
+              closeList();
+              inCode = true;
+            }
+            return;
+          }
+
+          if (inCode) {
+            codeLines.push(line);
+            return;
+          }
+
+          if (!line.trim()) {
+            closeList();
+            return;
+          }
+
+          const heading = line.match(/^(#{1,3})\s+(.+)$/);
+          if (heading) {
+            closeList();
+            html.push(`<h${heading[1].length}>${inlineMarkdown(heading[2])}</h${heading[1].length}>`);
+            return;
+          }
+
+          const unordered = line.match(/^\s*[-*]\s+(.+)$/);
+          if (unordered) {
+            if (listType !== "ul") {
+              closeList();
+              html.push("<ul>");
+              listType = "ul";
+            }
+            html.push(`<li>${inlineMarkdown(unordered[1])}</li>`);
+            return;
+          }
+
+          const ordered = line.match(/^\s*\d+[.、]\s+(.+)$/);
+          if (ordered) {
+            if (listType !== "ol") {
+              closeList();
+              html.push("<ol>");
+              listType = "ol";
+            }
+            html.push(`<li>${inlineMarkdown(ordered[1])}</li>`);
+            return;
+          }
+
+          closeList();
+          html.push(`<p>${inlineMarkdown(line)}</p>`);
+        });
+
+        if (inCode) {
+          html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+        }
+        closeList();
+        return html.join("");
+      }
+
+      function setReport(markdown, isEmpty = false) {
+        reportEl.textContent = markdown;
+        previewEl.innerHTML = isEmpty ? escapeHtml(markdown) : renderMarkdown(markdown);
+        reportEl.classList.toggle("empty", isEmpty);
+        previewEl.classList.toggle("empty", isEmpty);
+      }
+
+      function setView(view) {
+        const previewMode = view === "preview";
+        previewEl.classList.toggle("hidden", !previewMode);
+        reportEl.classList.toggle("hidden", previewMode);
+        $("previewTab").classList.toggle("active", previewMode);
+        $("markdownTab").classList.toggle("active", !previewMode);
+      }
+
+      function setVersionOptions(data) {
+        const select = $("versionSelect");
+        const current = select.value || $("diffBase").value || "main";
+        const options = [];
+        const seen = new Set();
+
+        data.branches.forEach((branch) => {
+          options.push({ value: branch, label: `分支 ${branch}` });
+          seen.add(branch);
+        });
+
+        data.commits.forEach((commit) => {
+          options.push({
+            value: commit.sha,
+            label: `${commit.short_sha} · ${commit.date} · ${commit.subject}`,
+          });
+          seen.add(commit.sha);
+        });
+
+        if (!seen.has(current)) {
+          options.unshift({ value: current, label: `自定义 ${current}` });
+        }
+
+        select.innerHTML = options
+          .map((option) =>
+            `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
+          .join("");
+        select.value = options.some((o) => o.value === current) ? current : options[0]?.value || "main";
+        $("diffBase").value = select.value;
+      }
+
+      async function loadVersions() {
+        statusEl.textContent = "正在查询 Git 版本...";
+        statusEl.className = "status";
+
+        try {
+          const response = await fetch("/api/git-versions");
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || `查询失败：${response.status}`);
+
+          setVersionOptions(data);
+          $("repoHint").textContent = `当前仓库：${data.root}，当前分支：${data.current_branch || "detached HEAD"}`;
+          statusEl.textContent = `已加载 ${data.branches.length} 个分支，${data.commits.length} 个提交`;
+          statusEl.className = "status ok";
+          saveSettings();
+        } catch (error) {
+          statusEl.textContent = `查询 Git 版本失败：${error.message}`;
+          statusEl.className = "status warn";
+        }
+      }
+
+      function getInput() {
+        return { gitDiff: $("gitDiff").value.trim() };
+      }
+
+      function summarizeDiff(diff) {
+        const files = new Set();
+        let additions = 0, deletions = 0;
+
+        diff.split("\n").forEach((line) => {
+          if (line.startsWith("diff --git ")) {
+            const match = line.match(/ b\/(.+)$/);
+            if (match) files.add(match[1]);
+          } else if (line.startsWith("+++ b/")) {
+            files.add(line.slice(6));
+          } else if (line.startsWith("+") && !line.startsWith("+++")) {
+            additions += 1;
+          } else if (line.startsWith("-") && !line.startsWith("---")) {
+            deletions += 1;
+          }
+        });
+
+        return { files: [...files], additions, deletions };
+      }
+
+      function localGenerate(input) {
+        const summary = summarizeDiff(input.gitDiff);
+        const files = summary.files.slice(0, 8);
+
+        return `研发周报
+
+一、本周工作总结
+本周主要围绕代码变更推进开发工作。根据 Git diff 初步统计，涉及 ${summary.files.length || "若干"} 个文件，新增 ${summary.additions} 行，删除 ${summary.deletions} 行。以下内容为 DeepSeek 调用失败后的本地兜底摘要。
+
+二、重点成果
+1. 完成相关模块的代码调整，并沉淀为可追踪的版本变更。
+2. 对变更文件进行了集中整理，便于后续评审、联调和回归。
+3. 保留 diff 作为周报依据，减少手工整理工作内容的成本。
+
+三、技术改进
+${files.map((file) => `- ${file}`).join("\n") || "- 暂未从 diff 中解析到具体文件路径"}
+
+四、问题与风险
+1. 本地模板无法理解完整业务背景，复杂改动需要结合需求和测试结果补充。
+2. 若 diff 包含大规模格式化或生成文件，周报摘要可能需要人工筛选。
+
+五、下周计划
+1. 继续推进未完成的开发事项。
+2. 补充必要的自测、联调和回归验证。
+3. 根据评审反馈优化实现细节并同步风险。`;
+      }
+
+      async function apiGenerate(input) {
+        const response = await fetch("/api/generate-weekly", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `接口请求失败：${response.status}`);
+        return data.text || "未收到有效内容。";
+      }
+
+      async function loadGitDiff() {
+        saveSettings();
+        const mode = encodeURIComponent($("diffMode").value);
+        const selectedBase = $("diffBase").value.trim() || $("versionSelect").value || "main";
+        const base = encodeURIComponent(selectedBase);
+        statusEl.textContent = "正在读取 Git diff...";
+        statusEl.className = "status";
+
+        try {
+          const response = await fetch(`/api/git-diff?mode=${mode}&base=${base}`);
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || `读取失败：${response.status}`);
+
+          $("gitDiff").value = data.diff;
+          if (!data.diff.trim()) {
+            statusEl.textContent = "未发现代码变更";
+            statusEl.className = "status warn";
+            return;
+          }
+
+          statusEl.textContent = `已读取 ${data.base} → HEAD，共 ${data.files_changed} 个文件`;
+          statusEl.className = "status ok";
+          saveSettings();
+        } catch (error) {
+          statusEl.textContent = `读取 Git diff 失败：${error.message}`;
+          statusEl.className = "status warn";
+        }
+      }
+
+      async function generate() {
+        saveSettings();
+        const input = getInput();
+
+        if (!input.gitDiff) {
+          statusEl.textContent = "请先读取或粘贴 Git diff";
+          statusEl.className = "status warn";
+          $("gitDiff").focus();
+          return;
+        }
+
+        setReport("正在生成...");
+        statusEl.textContent = "正在调用 DeepSeek...";
+        statusEl.className = "status";
+
+        try {
+          const text = await apiGenerate(input);
+          setReport(text);
+          statusEl.textContent = "DeepSeek 生成完成";
+          statusEl.className = "status ok";
+        } catch (error) {
+          setReport(localGenerate(input));
+          statusEl.textContent = `DeepSeek 调用失败，已切换本地模板：${error.message}`;
+          statusEl.className = "status warn";
+        }
+      }
+
+      function clearAll() {
+        ["gitDiff"].forEach((id) => { $(id).value = ""; });
+        setReport("读取或粘贴 Git diff 后生成周报。", true);
+        statusEl.textContent = "已清空";
+        statusEl.className = "status";
+        saveSettings();
+      }
+
+      async function copyReport() {
+        const text = reportEl.textContent.trim();
+        if (!text || previewEl.classList.contains("empty")) return;
+        await navigator.clipboard.writeText(text);
+        statusEl.textContent = "已复制到剪贴板";
+        statusEl.className = "status ok";
+      }
+
+      function downloadReport() {
+        const text = reportEl.textContent.trim();
+        if (!text || previewEl.classList.contains("empty")) return;
+        const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "workbrief-diff-weekly.txt";
+        link.click();
+        URL.revokeObjectURL(url);
+        statusEl.textContent = "已下载";
+        statusEl.className = "status ok";
+      }
+
+      fields.forEach((field) => {
+        const el = $(field);
+        if (el) el.addEventListener("change", saveSettings);
+      });
+
+      $("versionSelect").addEventListener("change", () => {
+        $("diffBase").value = $("versionSelect").value;
+        saveSettings();
+      });
+      $("diffBase").addEventListener("change", () => {
+        const value = $("diffBase").value.trim();
+        if (value) $("versionSelect").value = value;
+        saveSettings();
+      });
+      $("loadVersionsBtn").addEventListener("click", loadVersions);
+      $("loadDiffBtn").addEventListener("click", loadGitDiff);
+      $("generateBtn").addEventListener("click", generate);
+      $("regenerateBtn").addEventListener("click", generate);
+      $("previewTab").addEventListener("click", () => setView("preview"));
+      $("markdownTab").addEventListener("click", () => setView("markdown"));
+      $("clearBtn").addEventListener("click", clearAll);
+      $("copyBtn").addEventListener("click", copyReport);
+      $("downloadBtn").addEventListener("click", downloadReport);
+
+      loadSettings();
+      setReport("读取或粘贴 Git diff 后生成周报。", true);
+      setView("preview");
+      loadVersions();
+    </script>
+  </body>
+</html>
