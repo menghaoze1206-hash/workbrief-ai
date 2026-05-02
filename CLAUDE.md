@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-WorkBrief AI — a local tool that reads Git diffs and generates Chinese weekly dev reports via DeepSeek. Four files: `core.py` (shared logic), `workbrief.py` (CLI), `server.py` + `index.html` (browser UI). No dependencies, no build step.
+WorkBrief AI — a local tool that reads Git diffs and generates Chinese weekly dev reports via DeepSeek. Four files: `core.py` (shared logic), `wk.py` (CLI), `server.py` + `index.html` (browser UI). No dependencies, no build step.
 
 See `AGENTS.md` for detailed code style, naming conventions, and manual test checklist.
 
@@ -12,20 +12,20 @@ See `AGENTS.md` for detailed code style, naming conventions, and manual test che
 
 **Install (once):**
 ```bash
-./install.sh    # symlinks workbrief.py to a writable bin dir in PATH
+./install.sh    # symlinks wk.py to a writable bin dir in PATH
 ```
 
 **CLI (recommended):**
 ```bash
 workbrief                    # working vs HEAD
-workbrief -s                 # staged only
-workbrief -b main            # main...HEAD (range mode)
-workbrief -b v1.0 -t v2.0    # v1.0...v2.0
-workbrief -i                 # interactive version picker
-workbrief -l                 # list branches and recent commits
-workbrief -d                 # diff only, no AI call
-workbrief --dry              # preview prompt without calling API
-workbrief -o weekly.md       # write to file
+wk -s                 # staged only
+wk -b main            # main...HEAD (range mode)
+wk -b v1.0 -t v2.0    # v1.0...v2.0
+wk -i                 # interactive version picker
+wk -l                 # list branches and recent commits
+wk -d                 # diff only, no AI call
+wk --dry              # preview prompt without calling API
+wk -o weekly.md       # write to file
 ```
 
 **Browser UI:**
@@ -35,7 +35,7 @@ python3 server.py 3000         # Custom port
 PORT=3000 python3 server.py    # Via env var
 ```
 
-Run from the target Git repo. Both `workbrief.py` and `server.py` read Git state from `os.getcwd()`.
+Run from the target Git repo. Both `wk.py` and `server.py` read Git state from `os.getcwd()`.
 
 ## Environment variables
 
@@ -61,9 +61,9 @@ API key also falls back to `~/.claude/settings.json` → `env.ANTHROPIC_AUTH_TOK
 - `get_git_versions(cwd)` — returns (current_branch, branches, commits)
 - `count_files(stat)` — parses file count from `git diff --stat` output
 
-Both `workbrief.py` and `server.py` import from `core.py`. Never duplicate logic between them.
+Both `wk.py` and `server.py` import from `core.py`. Never duplicate logic between them.
 
-**CLI (`workbrief.py`):**
+**CLI (`wk.py`):**
 - argparse-based, outputs to stdout or file via `-o`
 - `-i` launches an interactive numbered menu of branches and commits
 - `--dry` prints the prompt without calling the API

@@ -168,15 +168,15 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例：
-  workbrief -i                    交互选择 diff 范围
-  workbrief                        工作区 vs HEAD
-  workbrief -s                     仅暂存区
-  workbrief -b main                从 main 到 HEAD
-  workbrief -b v1.0 -t v2.0        从 v1.0 到 v2.0
-  workbrief -b main -d             只看 diff
-  workbrief -b main --dry          预览 prompt 不调 API
-  workbrief -l                     列出可用的分支和提交
-  workbrief -o weekly.md           输出到文件
+  wk -i                    交互选择 diff 范围
+  wk                        工作区 vs HEAD
+  wk -s                     仅暂存区
+  wk -b main                从 main 到 HEAD
+  wk -b v1.0 -t v2.0        从 v1.0 到 v2.0
+  wk -b main -d             只看 diff
+  wk -b main --dry          预览 prompt 不调 API
+  wk -l                     列出可用的分支和提交
+  wk -o weekly.md           输出到文件
 
 环境变量：
   DEEPSEEK_BASE_URL               API 地址（默认 https://api.deepseek.com）

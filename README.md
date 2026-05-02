@@ -14,11 +14,11 @@ cd workbrief-ai && ./install.sh
 ## CLI 使用
 
 ```bash
-workbrief              # 工作区 vs HEAD，生成周报
-workbrief -s           # 仅暂存区
-workbrief -b main      # main...HEAD
-workbrief -d           # 只看 diff，不调 AI
-workbrief -o w.md      # 输出到文件
+wk              # 工作区 vs HEAD，生成周报
+wk -s           # 仅暂存区
+wk -b main      # main...HEAD
+wk -d           # 只看 diff，不调 AI
+wk -o w.md      # 输出到文件
 ```
 
 ## 浏览器 UI（可选）
