@@ -2,173 +2,22 @@
 """WorkBrief AI — 根据 Git diff 生成中文研发周报（CLI 版）。"""
 
 import argparse
-import json
 import os
-import re
 import subprocess
 import sys
 import urllib.error
-import urllib.request
 
-MAX_DIFF_BYTES = 240_000
-MAX_PROMPT_CHARS = 16_000
-DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-DEEPSEEK_MODEL = "deepseek-v4-flash"
-CLAUDE_SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
-REF_PATTERN = re.compile(r"^[A-Za-z0-9._/\-]+$")
-
-
-def run_git(args, max_bytes=None):
-    result = subprocess.run(
-        ["git", *args],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    output = result.stdout
-    if max_bytes and len(output.encode("utf-8")) > max_bytes:
-        encoded = output.encode("utf-8")[:max_bytes]
-        output = encoded.decode("utf-8", errors="ignore")
-        output += "\n\n[diff 已截断]"
-    return output
-
-
-def build_diff_args(mode, base):
-    if mode == "range":
-        ref = f"{base}...HEAD"
-        return ["diff", "--stat", ref, "--"], ["diff", ref, "--"]
-    if mode == "staged":
-        return ["diff", "--cached", "--stat", "--"], ["diff", "--cached", "--"]
-    return ["diff", "--stat", "HEAD", "--"], ["diff", "HEAD", "--"]
-
-
-def count_files(stat):
-    for line in reversed(stat.splitlines()):
-        match = re.search(r"(\d+) files? changed", line)
-        if match:
-            return int(match.group(1))
-    return 0
-
-
-def get_deepseek_api_key():
-    key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    if key:
-        return key.removeprefix("Bearer ").strip()
-
-    try:
-        with open(CLAUDE_SETTINGS_PATH, "r", encoding="utf-8") as f:
-            settings = json.load(f)
-    except FileNotFoundError:
-        raise ValueError("未找到 Claude Code 配置文件，无法读取 API Key。")
-
-    env = settings.get("env", {})
-    key = env.get("ANTHROPIC_AUTH_TOKEN") or env.get("ANTHROPIC_API_KEY")
-    if not key:
-        raise ValueError("Claude Code 配置中未找到 ANTHROPIC_AUTH_TOKEN。")
-    return key.removeprefix("Bearer ").strip()
-
-
-def build_weekly_prompt(git_diff):
-    diff_text = git_diff[:MAX_PROMPT_CHARS]
-    truncated = (
-        "\n[diff 已截断，仅保留前 16000 字符]" if len(git_diff) > MAX_PROMPT_CHARS else ""
-    )
-    return f"""你是一名擅长写周报的中文助手。你的读者是不懂代码的老板，需要你根据 Git diff 反推本周的工作成果。
-
-要求：
-1. 每条用老板能看懂的业务语言描述，禁用技术术语（如 refactor、bugfix、API、组件、模块、依赖等）。
-2. 如果 diff 来自某个功能模块，推断这个改动对用户/客户有什么影响，而不是描述改了什么文件。
-3. 当实在无法判断业务含义时，用"优化了 XX 相关功能"一笔带过，不要提文件路径或函数名。
-4. 输出 3-6 条要点，每条一句话，直接可贴周报。
-
-Git diff：
-{diff_text}{truncated}"""
-
-
-def call_deepseek(prompt):
-    api_key = get_deepseek_api_key()
-    body = json.dumps(
-        {
-            "model": DEEPSEEK_MODEL,
-            "thinking": {"type": "disabled"},
-            "messages": [
-                {"role": "system", "content": "你只输出可直接提交的中文周报正文。面向老板，用业务语言，不提技术细节。"},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.35,
-        },
-        ensure_ascii=False,
-    ).encode("utf-8")
-
-    request = urllib.request.Request(
-        f"{DEEPSEEK_BASE_URL}/chat/completions",
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-        method="POST",
-    )
-
-    with urllib.request.urlopen(request, timeout=120) as response:
-        data = json.loads(response.read().decode("utf-8"))
-    return data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-
-
-def summarize_diff(diff):
-    """本地兜底：统计文件、增删行数。"""
-    files = set()
-    additions = 0
-    deletions = 0
-
-    for line in diff.split("\n"):
-        if line.startswith("diff --git "):
-            m = line.rfind(" b/")
-            if m != -1:
-                files.add(line[m + 3:])
-        elif line.startswith("+++ b/"):
-            files.add(line[6:])
-        elif line.startswith("+") and not line.startswith("+++"):
-            additions += 1
-        elif line.startswith("-") and not line.startswith("---"):
-            deletions += 1
-
-    file_list = sorted(files)[:8]
-    lines = [
-        "## 周报（本地模板）",
-        "",
-        f"- 本周完成了一批代码变更，涉及 {len(files) or '若干'} 个文件，新增 {additions} 行、删除 {deletions} 行。",
-    ]
-    for f in file_list:
-        lines.append(f"- 调整了 `{f}` 相关逻辑。")
-    if len(files) > 8:
-        lines.append(f"- ... 以及其他 {len(files) - 8} 个文件。")
-    lines.append("")
-    lines.append("*以上为 DeepSeek 调用失败后的本地兜底摘要。*")
-    return "\n".join(lines)
-
-
-def get_git_versions():
-    """获取当前仓库的分支列表和最近提交。"""
-    branches_out = run_git(["for-each-ref", "--format=%(refname:short)", "refs/heads"])
-    current_branch = run_git(["branch", "--show-current"]).strip()
-    branches = [line.strip() for line in branches_out.splitlines() if line.strip()]
-
-    commits_out = run_git(
-        ["log", "--date=short", "--pretty=format:%H%x1f%h%x1f%ad%x1f%s", "-20"]
-    )
-    commits = []
-    for line in commits_out.splitlines():
-        parts = line.split("\x1f")
-        if len(parts) != 4:
-            continue
-        sha, short_sha, date, subject = parts
-        commits.append(
-            {"sha": sha, "short_sha": short_sha, "date": date, "subject": subject}
-        )
-
-    return current_branch, branches, commits
+from core import (
+    MAX_DIFF_BYTES,
+    REF_PATTERN,
+    build_diff_args,
+    build_weekly_prompt,
+    call_deepseek,
+    count_files,
+    get_git_versions,
+    run_git,
+    summarize_diff,
+)
 
 
 def pick_interactive(no_color=False):
@@ -191,7 +40,7 @@ def pick_interactive(no_color=False):
 
     print(f"\n{c}当前分支：{r}{current_branch}\n")
     print(f"{y}快捷模式：{r}")
-    for i, (key, label, _, _) in enumerate(options):
+    for key, label, _, _ in options:
         print(f"  [{key}]  {label}")
 
     print(f"\n{y}分支：{r}")
@@ -203,7 +52,14 @@ def pick_interactive(no_color=False):
     print(f"\n{y}最近提交：{r}")
     for j, commit in enumerate(commits):
         key = str(len(branches) + j + 1)
-        options.append((key, f"{commit['short_sha']} {commit['date']} {commit['subject']}", "range", commit["sha"]))
+        options.append(
+            (
+                key,
+                f"{commit['short_sha']} {commit['date']} {commit['subject']}",
+                "range",
+                commit["sha"],
+            )
+        )
         print(f"  [{key:>2}]  {commit['short_sha']} {commit['date']} {commit['subject']}")
 
     print()
@@ -224,12 +80,15 @@ def pick_interactive(no_color=False):
         print(f"无效选择：{choice}", file=sys.stderr)
 
 
-def generate_report(mode, base, diff_only, output_file, no_color):
-    """执行 diff 读取和 AI 生成，返回报告文本。"""
+def generate_report(mode, base, to, diff_only, dry_run, output_file, no_color):
     c = "" if no_color else "\033[36m"
     r = "" if no_color else "\033[0m"
     y = "" if no_color else "\033[33m"
     g = "" if no_color else "\033[32m"
+
+    if mode == "range" and not REF_PATTERN.match(to):
+        print(f"错误：目标版本名包含不支持的字符: {to}", file=sys.stderr)
+        sys.exit(1)
 
     if not REF_PATTERN.match(base):
         print(f"错误：版本名包含不支持的字符: {base}", file=sys.stderr)
@@ -237,7 +96,7 @@ def generate_report(mode, base, diff_only, output_file, no_color):
 
     try:
         run_git(["rev-parse", "--show-toplevel"])
-        stat_args, diff_args = build_diff_args(mode, base)
+        stat_args, diff_args = build_diff_args(mode, base, to=to)
         stat = run_git(stat_args)
         diff = run_git(diff_args, max_bytes=MAX_DIFF_BYTES)
     except subprocess.CalledProcessError as e:
@@ -253,7 +112,14 @@ def generate_report(mode, base, diff_only, output_file, no_color):
         print("未发现代码变更。", file=sys.stderr)
         sys.exit(0)
 
+    mode_label = {
+        "working": "工作区 vs HEAD",
+        "staged": "暂存区",
+        "range": f"{base}...{to}",
+    }[mode]
+
     if diff_only:
+        print(f"{c}范围：{r}{mode_label}　{c}文件：{r}{files_changed}", file=sys.stderr)
         if output_file:
             with open(output_file, "w", encoding="utf-8") as f:
                 f.write(full_diff + "\n")
@@ -262,12 +128,17 @@ def generate_report(mode, base, diff_only, output_file, no_color):
             print(full_diff)
         return
 
-    mode_label = {"working": "工作区 vs HEAD", "staged": "暂存区", "range": f"{base}...HEAD"}[mode]
+    prompt = build_weekly_prompt(full_diff)
+
+    if dry_run:
+        print(f"{c}--- DRY RUN: 以下是将发送给 DeepSeek 的 prompt ---{r}")
+        print(prompt)
+        return
+
     print(f"{c}范围：{r}{mode_label}　{c}文件：{r}{files_changed}　{c}截断：{r}{'是' if truncated else '否'}", file=sys.stderr)
     print(f"{y}正在调用 DeepSeek 生成周报...{r}", file=sys.stderr)
 
     try:
-        prompt = build_weekly_prompt(full_diff)
         report = call_deepseek(prompt)
     except (ValueError, urllib.error.HTTPError, urllib.error.URLError) as e:
         if hasattr(e, "read"):
@@ -301,9 +172,17 @@ def main():
   workbrief                        工作区 vs HEAD
   workbrief -s                     仅暂存区
   workbrief -b main                从 main 到 HEAD
+  workbrief -b v1.0 -t v2.0        从 v1.0 到 v2.0
   workbrief -b main -d             只看 diff
+  workbrief -b main --dry          预览 prompt 不调 API
   workbrief -l                     列出可用的分支和提交
   workbrief -o weekly.md           输出到文件
+
+环境变量：
+  DEEPSEEK_BASE_URL               API 地址（默认 https://api.deepseek.com）
+  DEEPSEEK_MODEL                  模型名称（默认 deepseek-v4-flash）
+  DEEPSEEK_TEMPERATURE            温度参数（默认 0.35）
+  DEEPSEEK_API_KEY                API Key（优先级最高）
         """.strip(),
     )
     parser.add_argument(
@@ -314,8 +193,13 @@ def main():
     )
     parser.add_argument(
         "--base", "-b",
-        default="main",
-        help="起始版本 (默认 main)",
+        default=None,
+        help="起始版本，指定后自动启用 range 模式 (默认 main)",
+    )
+    parser.add_argument(
+        "--to", "-t",
+        default=None,
+        help="目标版本 (默认 HEAD)",
     )
     parser.add_argument(
         "--staged", "-s",
@@ -336,6 +220,11 @@ def main():
         "--diff-only", "-d",
         action="store_true",
         help="只输出 diff，不调用 AI 生成周报",
+    )
+    parser.add_argument(
+        "--dry-run", "--dry",
+        action="store_true",
+        help="预览将要发送的 prompt，不调用 API",
     )
     parser.add_argument(
         "--output", "-o",
@@ -368,11 +257,17 @@ def main():
 
     if args.interactive:
         mode, base = pick_interactive(args.no_color)
+        to = "HEAD"
+    elif args.staged:
+        mode, base, to = "staged", "HEAD", "HEAD"
+    elif args.base is not None or args.to is not None or args.mode == "range":
+        mode = "range"
+        base = args.base or "main"
+        to = args.to or "HEAD"
     else:
-        mode = "staged" if args.staged else args.mode
-        base = "HEAD" if mode != "range" else args.base
+        mode, base, to = "working", "HEAD", "HEAD"
 
-    generate_report(mode, base, args.diff_only, args.output, args.no_color)
+    generate_report(mode, base, to, args.diff_only, args.dry_run, args.output, args.no_color)
 
 
 if __name__ == "__main__":
