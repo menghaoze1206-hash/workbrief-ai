@@ -156,17 +156,16 @@ class WorkBriefHandler(SimpleHTTPRequestHandler):
         diff_text = git_diff[:MAX_PROMPT_CHARS]
         truncated = "\n[diff 已截断，仅保留前 16000 字符]" if len(git_diff) > MAX_PROMPT_CHARS else ""
 
-        return f"""你是一名擅长研发周报写作的中文助手。请根据 Git diff 生成一份简洁的中文研发周报。
+        return f”””你是一名擅长写周报的中文助手。你的读者是不懂代码的老板，需要你根据 Git diff 反推本周的工作成果。
 
 要求：
-1. 只基于 diff 总结，不要编造不存在的功能、数字或业务结果。
-2. 重点是“本周改了什么”，不要逐行解释代码，也不要展开太细。
-3. 输出 3-6 条要点即可，每条一句话，适合直接贴到周报里。
-4. 如果能判断业务含义，就用业务口径表达；判断不了时，用模块/文件变更口径表达。
-5. 不需要单独写风险、下周计划、技术细节长段落。
+1. 每条用老板能看懂的业务语言描述，禁用技术术语（如 refactor、bugfix、API、组件、模块、依赖等）。
+2. 如果 diff 来自某个功能模块，推断这个改动对用户/客户有什么影响，而不是描述改了什么文件。
+3. 当实在无法判断业务含义时，用”优化了 XX 相关功能”一笔带过，不要提文件路径或函数名。
+4. 输出 3-6 条要点，每条一句话，直接可贴周报。
 
 Git diff：
-{diff_text}{truncated}"""
+{diff_text}{truncated}”””
 
     def call_deepseek(self, prompt):
         api_key = self.get_deepseek_api_key()
@@ -177,7 +176,7 @@ Git diff：
                 "messages": [
                     {
                         "role": "system",
-                        "content": "你只输出可直接提交的中文研发周报正文。",
+                        "content": "你只输出可直接提交的中文周报正文。面向老板，用业务语言，不提技术细节。",
                     },
                     {"role": "user", "content": prompt},
                 ],
