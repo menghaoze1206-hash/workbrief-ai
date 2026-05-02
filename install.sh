@@ -15,6 +15,10 @@ chmod +x "$SRC"
 BIN_DIR=""
 IFS=':' read -ra PATH_DIRS <<< "$PATH"
 for dir in "${PATH_DIRS[@]}"; do
+    # Skip version-manager directories
+    case "$dir" in
+        */.nvm/*|*/.rbenv/*|*/.pyenv/*) continue ;;
+    esac
     if [ -d "$dir" ] && [ -w "$dir" ] && [[ "$dir" =~ /bin$ ]]; then
         BIN_DIR="$dir"
         break
