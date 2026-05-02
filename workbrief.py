@@ -136,7 +136,7 @@ def summarize_diff(diff):
 
     file_list = sorted(files)[:8]
     lines = [
-        "## 研发周报（本地模板）",
+        "## 周报（本地模板）",
         "",
         f"- 本周完成了一批代码变更，涉及 {len(files) or '若干'} 个文件，新增 {additions} 行、删除 {deletions} 行。",
     ]
@@ -145,67 +145,96 @@ def summarize_diff(diff):
     if len(files) > 8:
         lines.append(f"- ... 以及其他 {len(files) - 8} 个文件。")
     lines.append("")
-    lines.append("*以上为 DeepSeek 调用失败后的本地兜底摘要，建议结合实际业务背景再做微调。*")
+    lines.append("*以上为 DeepSeek 调用失败后的本地兜底摘要。*")
     return "\n".join(lines)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="根据 Git diff 生成中文研发周报",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-示例：
-  workbrief                         工作区相对 HEAD 生成周报
-  workbrief --staged                仅暂存区
-  workbrief --base main             从 main 到 HEAD
-  workbrief --base v1.0 --diff-only 只输出 v1.0...HEAD 的 diff
-  workbrief -o weekly.md            输出到文件
-        """.strip(),
-    )
-    parser.add_argument(
-        "--mode", "-m",
-        choices=["working", "staged", "range"],
-        default="working",
-        help="diff 范围 (默认 working)",
-    )
-    parser.add_argument(
-        "--base", "-b",
-        default="main",
-        help="起始版本，仅 range 模式有效 (默认 main)",
-    )
-    parser.add_argument(
-        "--staged", "-s",
-        action="store_true",
-        help="等同于 --mode staged",
-    )
-    parser.add_argument(
-        "--diff-only", "-d",
-        action="store_true",
-        help="只输出 diff，不调用 AI 生成周报",
-    )
-    parser.add_argument(
-        "--output", "-o",
-        help="输出到文件，默认输出到终端",
-    )
-    parser.add_argument(
-        "--no-color",
-        action="store_true",
-        help="禁用 ANSI 颜色输出",
-    )
+def get_git_versions():
+    """获取当前仓库的分支列表和最近提交。"""
+    branches_out = run_git(["for-each-ref", "--format=%(refname:short)", "refs/heads"])
+    current_branch = run_git(["branch", "--show-current"]).strip()
+    branches = [line.strip() for line in branches_out.splitlines() if line.strip()]
 
-    args = parser.parse_args()
+    commits_out = run_git(
+        ["log", "--date=short", "--pretty=format:%H%x1f%h%x1f%ad%x1f%s", "-20"]
+    )
+    commits = []
+    for line in commits_out.splitlines():
+        parts = line.split("\x1f")
+        if len(parts) != 4:
+            continue
+        sha, short_sha, date, subject = parts
+        commits.append(
+            {"sha": sha, "short_sha": short_sha, "date": date, "subject": subject}
+        )
 
-    mode = "staged" if args.staged else args.mode
-    base = args.base
-    if mode != "range":
-        base = "HEAD"
+    return current_branch, branches, commits
 
-    # Validate base ref
-    if not REF_PATTERN.match(base):
-        print(f"错误：base 分支名包含不支持的字符: {base}", file=sys.stderr)
+
+def pick_interactive(no_color=False):
+    """交互式选择 diff 范围，返回 (mode, base)。"""
+    c = "" if no_color else "\033[36m"
+    y = "" if no_color else "\033[33m"
+    r = "" if no_color else "\033[0m"
+
+    try:
+        current_branch, branches, commits = get_git_versions()
+    except subprocess.CalledProcessError as e:
+        msg = e.stderr.strip() or e.stdout.strip() or str(e)
+        print(f"Git 错误：{msg}", file=sys.stderr)
         sys.exit(1)
 
-    # Read diff
+    options = [
+        ("w", "工作区 vs HEAD", "working", "HEAD"),
+        ("s", "暂存区", "staged", "HEAD"),
+    ]
+
+    print(f"\n{c}当前分支：{r}{current_branch}\n")
+    print(f"{y}快捷模式：{r}")
+    for i, (key, label, _, _) in enumerate(options):
+        print(f"  [{key}]  {label}")
+
+    print(f"\n{y}分支：{r}")
+    for i, branch in enumerate(branches):
+        key = str(i + 1)
+        options.append((key, branch, "range", branch))
+        print(f"  [{key:>2}]  {branch}")
+
+    print(f"\n{y}最近提交：{r}")
+    for j, commit in enumerate(commits):
+        key = str(len(branches) + j + 1)
+        options.append((key, f"{commit['short_sha']} {commit['date']} {commit['subject']}", "range", commit["sha"]))
+        print(f"  [{key:>2}]  {commit['short_sha']} {commit['date']} {commit['subject']}")
+
+    print()
+    while True:
+        try:
+            choice = input("选择编号 > ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            sys.exit(0)
+
+        if not choice:
+            continue
+
+        for key, label, mode, base in options:
+            if choice.lower() == key.lower():
+                return mode, base
+
+        print(f"无效选择：{choice}", file=sys.stderr)
+
+
+def generate_report(mode, base, diff_only, output_file, no_color):
+    """执行 diff 读取和 AI 生成，返回报告文本。"""
+    c = "" if no_color else "\033[36m"
+    r = "" if no_color else "\033[0m"
+    y = "" if no_color else "\033[33m"
+    g = "" if no_color else "\033[32m"
+
+    if not REF_PATTERN.match(base):
+        print(f"错误：版本名包含不支持的字符: {base}", file=sys.stderr)
+        sys.exit(1)
+
     try:
         run_git(["rev-parse", "--show-toplevel"])
         stat_args, diff_args = build_diff_args(mode, base)
@@ -224,35 +253,28 @@ def main():
         print("未发现代码变更。", file=sys.stderr)
         sys.exit(0)
 
-    if args.diff_only:
-        output = full_diff
-        if args.output:
-            with open(args.output, "w", encoding="utf-8") as f:
-                f.write(output + "\n")
-            print(f"Diff 已写入 {args.output}", file=sys.stderr)
+    if diff_only:
+        if output_file:
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(full_diff + "\n")
+            print(f"Diff 已写入 {output_file}", file=sys.stderr)
         else:
-            print(output)
+            print(full_diff)
         return
-
-    # Summary line
-    c = "\033[36m" if not args.no_color else ""
-    r = "\033[0m" if not args.no_color else ""
-    y = "\033[33m" if not args.no_color else ""
-    g = "\033[32m" if not args.no_color else ""
 
     mode_label = {"working": "工作区 vs HEAD", "staged": "暂存区", "range": f"{base}...HEAD"}[mode]
     print(f"{c}范围：{r}{mode_label}　{c}文件：{r}{files_changed}　{c}截断：{r}{'是' if truncated else '否'}", file=sys.stderr)
     print(f"{y}正在调用 DeepSeek 生成周报...{r}", file=sys.stderr)
 
-    # Generate
     try:
         prompt = build_weekly_prompt(full_diff)
         report = call_deepseek(prompt)
     except (ValueError, urllib.error.HTTPError, urllib.error.URLError) as e:
-        msg = str(e)
         if hasattr(e, "read"):
-            msg = e.read().decode("utf-8", errors="ignore")[:200]
-        print(f"{y}DeepSeek 调用失败，使用本地模板：{msg}{r}", file=sys.stderr)
+            detail = e.read().decode("utf-8", errors="ignore")[:200]
+        else:
+            detail = str(e)
+        print(f"{y}DeepSeek 调用失败，使用本地模板：{detail}{r}", file=sys.stderr)
         report = summarize_diff(full_diff)
     else:
         if not report:
@@ -261,12 +283,96 @@ def main():
         else:
             print(f"{g}生成完成。{r}", file=sys.stderr)
 
-    if args.output:
-        with open(args.output, "w", encoding="utf-8") as f:
+    if output_file:
+        with open(output_file, "w", encoding="utf-8") as f:
             f.write(report + "\n")
-        print(f"周报已写入 {args.output}", file=sys.stderr)
+        print(f"周报已写入 {output_file}", file=sys.stderr)
     else:
         print(report)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="根据 Git diff 生成中文研发周报",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例：
+  workbrief -i                    交互选择 diff 范围
+  workbrief                        工作区 vs HEAD
+  workbrief -s                     仅暂存区
+  workbrief -b main                从 main 到 HEAD
+  workbrief -b main -d             只看 diff
+  workbrief -l                     列出可用的分支和提交
+  workbrief -o weekly.md           输出到文件
+        """.strip(),
+    )
+    parser.add_argument(
+        "--mode", "-m",
+        choices=["working", "staged", "range"],
+        default="working",
+        help="diff 范围 (默认 working)",
+    )
+    parser.add_argument(
+        "--base", "-b",
+        default="main",
+        help="起始版本 (默认 main)",
+    )
+    parser.add_argument(
+        "--staged", "-s",
+        action="store_true",
+        help="等同于 --mode staged",
+    )
+    parser.add_argument(
+        "--interactive", "-i",
+        action="store_true",
+        help="交互式选择 diff 范围",
+    )
+    parser.add_argument(
+        "--list", "-l",
+        action="store_true",
+        help="列出可用的分支和最近提交",
+    )
+    parser.add_argument(
+        "--diff-only", "-d",
+        action="store_true",
+        help="只输出 diff，不调用 AI 生成周报",
+    )
+    parser.add_argument(
+        "--output", "-o",
+        help="输出到文件，默认输出到终端",
+    )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="禁用 ANSI 颜色输出",
+    )
+
+    args = parser.parse_args()
+
+    if args.list:
+        try:
+            current_branch, branches, commits = get_git_versions()
+        except subprocess.CalledProcessError as e:
+            msg = e.stderr.strip() or e.stdout.strip() or str(e)
+            print(f"Git 错误：{msg}", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"当前分支：{current_branch}")
+        print(f"\n分支：")
+        for branch in branches:
+            print(f"  {branch}")
+        print(f"\n最近提交：")
+        for commit in commits:
+            print(f"  {commit['short_sha']} {commit['date']} {commit['subject']}")
+        return
+
+    if args.interactive:
+        mode, base = pick_interactive(args.no_color)
+    else:
+        mode = "staged" if args.staged else args.mode
+        base = "HEAD" if mode != "range" else args.base
+
+    generate_report(mode, base, args.diff_only, args.output, args.no_color)
 
 
 if __name__ == "__main__":
