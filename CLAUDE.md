@@ -10,13 +10,18 @@ See `AGENTS.md` for detailed code style, naming conventions, and manual test che
 
 ## Commands
 
+**Install (once):**
+```bash
+./install.sh    # symlinks workbrief.py to a writable bin dir in PATH
+```
+
 **CLI (recommended):**
 ```bash
-python3 workbrief.py                    # working vs HEAD
-python3 workbrief.py -s                 # staged only
-python3 workbrief.py -b main            # main...HEAD
-python3 workbrief.py -d                 # diff only, no AI call
-python3 workbrief.py -o weekly.md       # write to file
+workbrief                    # working vs HEAD
+workbrief -s                 # staged only
+workbrief -b main            # main...HEAD
+workbrief -d                 # diff only, no AI call
+workbrief -o weekly.md       # write to file
 ```
 
 **Browser UI:**
